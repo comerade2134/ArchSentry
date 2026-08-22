@@ -112,7 +112,7 @@ describe("loadContract / parseContract", () => {
     rmSync(p);
   });
 
-  it("warns (but does not fail) on duplicate rule ids (audit P3-H)", () => {
+  it("warns on duplicate rule ids", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const yaml =
       "version: 1\n" +

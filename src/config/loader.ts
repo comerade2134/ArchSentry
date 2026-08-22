@@ -6,20 +6,13 @@ import { envInt } from "../util/env";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
 const VALID_TYPES = ["pattern", "semgrep"] as const;
-// Only the v1 schema is understood today. A typo'd/forward-versioned config must
-// fail closed rather than silently mis-parsing (consolidated audit sweep).
 const SUPPORTED_VERSIONS = new Set([1]);
-// Bound the ruleset so a malicious/buggy archsentry.yml can't trigger unbounded
-// scan work (consolidated audit sweep). Overridable via ARCHSENTRY_MAX_RULES.
 const DEFAULT_MAX_RULES = 1000;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((x) => typeof x === "string");
 }
 
-// Thrown for any malformed archsentry.yml. Carrying its own type lets callers
-// (CLI, GitHub App) distinguish a user-facing config error from an unexpected
-// internal failure and print a clean message instead of a stack trace.
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -29,24 +22,20 @@ export class ConfigError extends Error {
 
 /**
  * Parse and validate a raw `archsentry.yml` document into a {@link Contract}.
- *
- * This is the single source of truth for config shape: it enforces the schema
- * version, rejects unknown rule keys (with a warning — audit P3-3), validates
- * each rule's fields, and bounds the ruleset size (default 1000, overridable via
- * `ARCHSENTRY_MAX_RULES`). On any structural problem it throws {@link ConfigError}
- * with a message safe to surface to the user. The function is pure (no I/O, no
- * mutation of the caller's input), so callers can parse without side effects.
- *
- * @param raw The full YAML text of the contract.
- * @param opts.maxRules Override for the ruleset size cap (defaults to
- *   `ARCHSENTRY_MAX_RULES` / 1000). Exposed so tests and hosts can tune it.
- * @returns A fully-typed, validated {@link Contract}.
- * @throws {ConfigError} When the document is missing required fields, declares
- *   an unsupported `version`, or violates a per-rule constraint.
  */
 export function parseContract(raw: string, opts: { maxRules?: number } = {}): Contract {
+  if (!raw || typeof raw !== "string" || !raw.trim()) {
+    throw new ConfigError("Contract configuration is empty.");
+  }
+
   const MAX_RULES = opts.maxRules ?? DEFAULT_MAX_RULES;
-  const data = parse(raw);
+  let data: unknown;
+  try {
+    data = parse(raw);
+  } catch (e) {
+    throw new ConfigError(`YAML syntax error in contract: ${(e as Error).message}`);
+  }
+
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new ConfigError("Config root must be a YAML mapping with `version` and `rules`.");
   }
@@ -71,9 +60,6 @@ export function parseContract(raw: string, opts: { maxRules?: number } = {}): Co
 
   const rules = root.rules.map((r, i) => validateRule(r, i));
 
-  // A duplicate rule id is almost always a copy/paste mistake. We don't fail
-  // hard (a team may intentionally shadow a base rule), but we surface it so the
-  // author knows enforcement semantics may not be what they expect (audit P3-H).
   const seen = new Map<string, number>();
   for (const rule of rules) {
     seen.set(rule.id, (seen.get(rule.id) ?? 0) + 1);
@@ -85,9 +71,6 @@ export function parseContract(raw: string, opts: { maxRules?: number } = {}): Co
   return { version: root.version, rules };
 }
 
-// Known Semgrep pattern keys. A semgrep rule must declare at least one or it is
-// misconfigured (it would match nothing or everything) — we reject it so the
-// failure is loud instead of silently wrong (audit M4, fail-closed).
 const SEMGREP_PATTERN_KEYS = [
   "pattern",
   "patterns",
@@ -138,8 +121,6 @@ function validateRule(raw: unknown, index: number): Rule {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new ConfigError(`Rule at index ${index} must be a mapping.`);
   }
-  // Clone before mutating so the caller's parsed object is never altered
-  // (audit L4 — keeps parseContract idempotent and side-effect free).
   const r = { ...(raw as Record<string, unknown>) };
   const where = typeof r.id === "string" ? `Rule "${r.id}"` : `Rule at index ${index}`;
 
@@ -185,23 +166,14 @@ function validateRule(raw: unknown, index: number): Rule {
     validateSemgrepRule(r.semgrep, where);
   }
 
-  // Surface typos / unknown keys instead of silently dropping them (audit P3-3).
-  // A mis-typed `sev: warn` or `discription: ...` would otherwise be ignored and
-  // the rule would run with surprising defaults.
   const KNOWN = new Set(["id", "type", "severity", "description", "match", "semgrep"]);
   const extra = Object.keys(r).filter((k) => !KNOWN.has(k));
   if (extra.length) {
     consoleLogger.warn(`${where} has unknown key(s): ${extra.join(", ")} (ignored)`);
   }
 
-  // Centralize the default severity so every engine sees the same value.
-  // Fail-closed: a rule you explicitly wrote to enforce blocks the merge by
-  // default ("error") rather than merely warning.
   if (r.severity === undefined) r.severity = "error";
 
-  // Build a fully-typed Rule from the validated fields instead of casting the
-  // loose record — keeps the public type honest and avoids `as unknown as Rule`
-  // (audit P3-G).
   const rule: Rule = {
     id: r.id as string,
     type: r.type as "pattern" | "semgrep",
@@ -214,12 +186,7 @@ function validateRule(raw: unknown, index: number): Rule {
 }
 
 /**
- * Read `archsentry.yml` from disk and parse it via {@link parseContract}. Used
- * by the CLI entry point, which operates on a local file path. Any read error is
- * re-thrown as a {@link ConfigError} so the CLI can print a clean message and
- * exit non-zero.
- *
- * @param path Filesystem path to the contract file.
+ * Read `archsentry.yml` from disk and parse it via {@link parseContract}.
  */
 export function loadContract(path: string): Contract {
   let raw: string;

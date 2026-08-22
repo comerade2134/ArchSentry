@@ -1,7 +1,7 @@
 {
   "name": "archsentry",
   "version": "0.2.9",
-  "description": "Enforce your team's architectural rules on code before merge. Deterministic, config-first, AI-explanation-only.",
+  "description": "Deterministic architectural rule enforcement for CI and PR review with optional AI explanations.",
   "homepage": "https://github.com/comerade2134/archsentry",
   "repository": {
     "type": "git",

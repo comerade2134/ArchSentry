@@ -1,15 +1,14 @@
-# ArchSentry as a zero-infra GitHub Action (template for YOUR repo).
-# Save this as .github/workflows/archsentry.yml in the repo you want to scan.
-#
-# Requires the `archsentry` package published to npm (live as of v0.2.8).
-# For the hosted option instead, install the GitHub App:
-# https://github.com/comerade2134/archsentry
-name: ArchSentry Scan
+name: ArchSentry Architectural Gate
+
 on:
   pull_request:
-    branches: [main]
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+
 jobs:
-  archsentry:
+  archsentry-scan:
+    name: Architectural Integrity Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,17 +16,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      - name: Set up Node.js
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install pnpm
-        run: npm install -g pnpm@10
-      # Pin to a published version. `archsentry@0.2.8` is a mutable tag — for
-      # supply-chain hardening, pin to the exact npm tarball by appending its
-      # integrity hash, e.g. `archsentry@0.2.8 --hash sha512-...`. The hash is
-      # enforced by pnpm/npm, so a compromised tag can't swap the binary.
-      - name: Install ArchSentry CLI
-        run: pnpm dlx archsentry@0.2.8 --version
-      - name: Run Scan
-        run: pnpm dlx archsentry scan --config archsentry.yml --path .
+
+      - name: Run ArchSentry Scan
+        run: npx --yes archsentry scan --config archsentry.yml --path .
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} # Optional: AI remediation hints
