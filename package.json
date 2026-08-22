@@ -1,6 +1,6 @@
 {
   "name": "archsentry",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "Deterministic architectural rule enforcement for CI and PR review with optional AI explanations.",
   "homepage": "https://github.com/comerade2134/archsentry",
   "repository": {
