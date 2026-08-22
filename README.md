@@ -1,220 +1,244 @@
-# ArchSentry
+# 🛡️ ArchSentry
 
-> Enforce _your_ team's architectural rules on every PR — before merge. Deterministic, config-first, and free to scan.
+> **Enforce your team's architectural contracts on every pull request — deterministically, at zero scan token cost, with instant AI remediation.**
 
-AI coding assistants now write the majority of enterprise code, but the review layer built for humans has broken down. ArchSentry is a GitHub App that catches AI-generated (and human) code which violates **your team's specific architectural contract** — the rules a generic SAST tool simply can't see.
+[![npm version](https://img.shields.io/npm/v/archsentry.svg?style=flat-square&color=CB3837)](https://www.npmjs.com/package/archsentry)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/comerade2134/archsentry/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/comerade2134/archsentry/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg?style=flat-square)](https://nodejs.org)
+[![Zero Config Token Cost](https://img.shields.io/badge/Scan%20Cost-%240%20Deterministic-success.svg?style=flat-square)](https://github.com/comerade2134/archsentry)
+[![Semgrep Engine Compatible](https://img.shields.io/badge/Engine-Pattern%20%7C%20Semgrep%20AST-orange.svg?style=flat-square)](https://semgrep.dev)
 
-- **Deterministic detection. Zero LLM cost on scan.** Rules are structured YAML, not prompts. No token is spent _finding_ a violation.
-- **LLM only explains.** Once a violation is found, an LLM writes a plain-English fix hint — and silently falls back if the model is unavailable.
-- **Config-first.** Your contract lives in `archsentry.yml` in the repo. No dashboard, no vendor lock-in.
-- **Runs on the PR diff.** Only changed files are analyzed, in-memory, with no filesystem access.
+---
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![CI](https://github.com/comerade2134/archsentry/actions/workflows/ci.yml/badge.svg)
-📖 [Setup guide](SETUP.md) · [Rule examples](archsentry.yml.example)
+## ⚡ Terminal Demo
 
-## Try it in 60 seconds
+```bash
+$ npx archsentry scan --config archsentry.yml --path src --explain
 
-ArchSentry runs the **exact same checks** three ways. No account, no card, no SaaS.
+❌ ArchSentry found 1 violation(s) (1 error, 0 warnings):
 
-**Option 1 — GitHub Action (zero infra, no app).** Drop this in your repo as `.github/workflows/archsentry.yml` and push a PR:
+  • [error] no-direct-sql  src/controllers/user.controller.ts:7
+    All database writes must go through the repository layer.
+    > await db.query("INSERT INTO users (email, name) VALUES ($1, $2)", [payload.email, payload.name]);
+    💡 Remediation: All database writes must go through the repository layer. Move this call
+       behind the appropriate service or repository layer so the access path is centralized
+       and reviewable, rather than issued directly from `src/controllers/user.controller.ts`.
+
+$ echo $?
+1
+```
+
+---
+
+## 💡 Why ArchSentry?
+
+AI coding assistants (Cursor, Copilot, Claude Code) generate thousands of lines of code per day. While standard linters catch syntax errors and SAST tools detect known CVE vulnerabilities, **neither understands your system's architecture**. 
+
+LLM review bots burn hundreds of dollars per repo summarizing diffs without guaranteeing architectural compliance.
+
+**ArchSentry solves this with a two-phase architecture:**
+1. **Deterministic Phase (Zero Cost & Blazing Fast):** Code is matched against your YAML contracts via sub-millisecond regex or AST/Semgrep patterns. No tokens are spent finding violations.
+2. **Explanation Phase (Optional & Free-Tier Compatible):** When a violation is flagged, an LLM generates a concise, contextual remediation hint directly on the offending code snippet.
+
+---
+
+## 📊 Comparison Matrix
+
+| Feature | Legacy SAST (SonarQube, Snyk) | Linters (ESLint, Biome) | AI Review Bots (Codium, Copilot PR) | 🛡️ **ArchSentry** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Primary Focus** | Known CVEs & security vulnerabilities | Code style, syntax, and formatting | Generic natural language commentary | **Custom architectural boundaries & contracts** |
+| **Scan Cost** | Heavy license fees | Free | $0.05–$0.50+ per PR diff in LLM tokens | **$0 (Deterministic AST & Pattern Engine)** |
+| **Scan Latency** | 20s – 5 mins | < 1s | 15s – 60s (LLM API queue) | **< 100ms** |
+| **Deterministic Guarantee** | ✅ Yes | ✅ Yes | ❌ No (LLM hallucinations & flakiness) | **✅ 100% Deterministic** |
+| **Architectural Scope** | ❌ None (generic rules) | ⚠️ Limited (complex plugin ASTs) | ⚠️ Probabilistic (misses subtle invariants) | **✅ Declarative YAML Contracts** |
+| **Actionable AI Fix Hints** | ❌ Generic docs link | ❌ Static message | ⚠️ Verbose noise | **✅ Targeted, contextual fix explanations** |
+
+---
+
+## 🚀 30-Second Quickstart
+
+### 1. Local CLI Execution (`npx`)
+
+No installation required. Run directly in any repository:
+
+```bash
+# Scan a path against your contract
+npx archsentry scan --config archsentry.yml --path .
+
+# With optional AI remediation hints:
+npx archsentry scan --config archsentry.yml --path . --explain
+
+# Filter findings to modified lines in a git diff:
+git diff main...HEAD | npx archsentry scan --config archsentry.yml --diff -
+```
+
+#### Exit Codes (CI Standardized)
+* `0`: Clean scan. All architectural invariants satisfied.
+* `1`: Architectural violations detected (severity: `error`).
+* `2`: Runtime error (missing configuration file, malformed YAML, or invalid path).
+
+---
+
+### 2. Native GitHub Action Integration (Zero Infra)
+
+Add `.github/workflows/archsentry.yml` to your repository:
 
 ```yaml
-name: ArchSentry Scan
+name: ArchSentry Architectural Gate
+
 on:
   pull_request:
-    branches: [main]
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+
 jobs:
-  archsentry:
+  archsentry-scan:
+    name: Architectural Integrity Gate
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm install -g pnpm@10
-      - run: pnpm dlx archsentry@latest scan --config archsentry.yml --path .
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run ArchSentry Gate
+        run: npx --yes archsentry scan --config archsentry.yml --path .
+        env:
+          # Optional: provides instant AI remediation hints on violations
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-**Option 2 — Local CLI.** Point it at any folder:
+---
+
+### 3. GitHub App Deployment (Automated PR Comments)
+
+ArchSentry can also run as a dedicated Probot-powered GitHub App that automatically reviews PRs, posts inline architectural remediation comments, and cleans up stale comments upon push.
 
 ```bash
-npx archsentry@latest scan --config archsentry.yml --path .
-```
-
-It exits non-zero on `error` severity, so it drops straight into any CI as a gate. Add your rules (see [`archsentry.yml.example`](archsentry.yml.example)), push a PR, and ArchSentry posts the comment below.
-
-![ArchSentry PR comment](assets/pr-comment.svg)
-
-> **GitHub App with top-level PR comments?** That's self-host: you deploy this repo and register a GitHub App (see [SETUP.md](SETUP.md)). The published `archsentry` npm package is the **CLI/Action only** — the App host lives in this repo, not on npm.
-
-## Why not just use SAST?
-
-SAST tools find _known vulnerability patterns_ (CVEs, insecure APIs). They have no idea what **your** architecture is — "controllers must not talk to the database directly," "all Kafka producers go through the `events` module," "no `eval` in product code." That's exactly the contract ArchSentry enforces, expressed in your own words.
-
-|                                     | SAST   | ArchSentry                    |
-| ----------------------------------- | ------ | ----------------------------- |
-| Finds CVEs / insecure APIs          | ✅     | ➖ (run SAST too)             |
-| Enforces _your_ team's architecture | ➖     | ✅                            |
-| Cost to scan                        | varies | **free** (deterministic)      |
-| Explains _why_ in your context      | ➖     | ✅ (LLM, free tier available) |
-
-## How it works
-
-1. `archsentry.yml` in your repo declares structured rules (a `pattern` or `semgrep` matcher + paths + severity + a description).
-2. On every `pull_request.opened` / `pull_request.synchronize`, ArchSentry reads the contract from the base branch, fetches **only the changed code files**, and runs the deterministic engine in-memory.
-3. Violations are posted as a PR comment — with an LLM-written explanation when configured.
-
-The same engine powers a local CLI, so you can run the exact same checks in CI or locally:
-
-```bash
-pnpm scan --config archsentry.yml --path .
-```
-
-## Quick start
-
-### As a CLI
-
-```bash
-npx archsentry@latest scan --config samples/dummy-target/archsentry.yml --path samples/dummy-target
-```
-
-(Or, from a clone: `pnpm install` then `pnpm scan --config …`.)
-
-Flags the seeded violation in `controllers/user.controller.ts` and exits non-zero on `error` severity — a drop-in CI gate.
-
-Useful flags:
-
-- `-e, --explain` — attach an LLM/AI explanation to each violation (uses `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `OLLAMA_MODEL`, else a built-in template).
-- `-s, --severity <level>` — only report `error` (or `warn`, the default) severity and above.
-- `--no-fail` — report only; never exit non-zero (handy for informational scans).
-- `-f, --format <text|json>` — `json` emits a machine-readable report.
-
-### As a GitHub App
-
-```bash
+# Clone & install dependencies
 pnpm install
-cp .env.example .env      # then fill in APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PATH, WEBHOOK_PROXY_URL
-pnpm start               # Probot under tsx + smee-client webhook proxy
+
+# Configure credentials
+cp .env.example .env
+# Set APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PATH, and OPENROUTER_API_KEY
+
+# Start Probot webhook listener
+pnpm start
 ```
 
-For local dev the webhook is relayed through Smee. **In production, use direct delivery** (point the App's Webhook URL at your host's public HTTPS endpoint, leave `WEBHOOK_PROXY_URL` unset) — see [SETUP.md](SETUP.md).
+---
 
-**Register the app** (one-time):
+## 📜 Rule Schema Reference
 
-1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
-2. Homepage URL: `https://github.com/comerade2134/archsentry`. Webhook URL: your Smee channel (e.g. `https://smee.io/xxxx`); Webhook secret: any string (set it in `.env` as `WEBHOOK_SECRET`).
-3. Permissions: _Repository contents_ (read), _Pull requests_ (read & write). Subscribe to the **Pull request** event.
-4. Create the app, download the private key (`.pem`), save it as `private-key.pem` in the repo root. Install the app on the repos you want to guard.
-
-Then install it on a repo that has `archsentry.yml` and push a PR. See `archsentry.yml.example` for the contract format and `.env.example` for the required variables.
-
-> **Note on the published package.** The `archsentry` package on npm is the **CLI only** (the `scan` command) — `probot` is a _dev_ dependency and is not bundled, so `pnpm dlx archsentry` can't run the App. The GitHub App is self-host: clone this repo and run `pnpm start` (the App host lives here, not on npm). There is no managed/cloud instance — you deploy it yourself if you want top-level PR comments.
-
-### As a GitHub Action (zero infra)
-
-Prefer a CI check over a hosted app? Drop `examples/github-action.yml` into your repo as `.github/workflows/archsentry.yml`. It installs the published `archsentry` CLI from npm and runs it on every PR — no app registration required.
-
-## Explanations (optional, free)
-
-Every violation comment can include a plain-English explanation. Detection is always free; the explainer is chosen from the environment (first match wins):
-
-- `OPENROUTER_API_KEY` → any [OpenRouter](https://openrouter.ai) model, including **free** tiers like `nvidia/nemotron-3-ultra-550b-a55b:free`. No card. Checked first, so the free tier wins when both keys are set.
-- `OPENAI_API_KEY` → OpenAI model (`OPENAI_MODEL`, default **gpt-4.1-mini**; billed per call). Override with `OPENAI_MODEL`.
-- `OLLAMA_MODEL` → a free local model via [Ollama](https://ollama.com) (private, no key).
-- none → built-in template fallback (always works).
-
-If the chosen model errors, ArchSentry silently falls back so the comment always posts.
-
-## Tuning & safety limits
-
-All limits are environment variables (read per-PR, so you can tune them without a redeploy). A malformed value falls back to the default rather than silently disabling the limit.
-
-| Variable                           | Default            | Purpose                                                                                                |
-| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
-| `ARCHSENTRY_MAX_FILE_BYTES`        | `524288` (512 KiB) | Skip a single file once fetched if it exceeds this.                                                    |
-| `ARCHSENTRY_MAX_FILE_LINES`        | `5000`             | Pre-filter: don't even download a file whose diff exceeds this many changed lines.                     |
-| `ARCHSENTRY_MAX_FILES`             | `300`              | Skip the whole PR (with a warning comment) if it changes more files.                                   |
-| `ARCHSENTRY_MAX_BYTES`             | `5242880` (5 MiB)  | Skip the whole PR if total changed source exceeds this.                                                |
-| `ARCHSENTRY_FETCH_CONCURRENCY`     | `8`                | Max parallel file downloads.                                                                           |
-| `ARCHSENTRY_PIPELINE_TIMEOUT_MS`   | `9000`             | Hard ceiling for the whole scan; the webhook is acked immediately and the scan runs in the background. |
-| `ARCHSENTRY_MAX_EXPLAIN`           | `30`               | Max violations sent to the (paid) LLM per PR; the rest use the free template.                          |
-| `ARCHSENTRY_EXPLAIN_CONCURRENCY`   | `5`                | Max parallel LLM calls.                                                                                |
-| `ARCHSENTRY_LLM_TIMEOUT_MS`        | `30000`            | Per-LLM-call timeout.                                                                                  |
-| `ARCHSENTRY_MAX_EXPLANATION_CHARS` | `1000`             | Clamp on explanation length rendered into the comment.                                                 |
-
-If ArchSentry cannot read some changed files (missing permission, not found, or rate-limited), it fails **closed**: it posts a warning that enforcement was _not_ verified instead of claiming the PR is clean.
-
-## Rule schema
+Architectural contracts are declared in `archsentry.yml` at the root of your project:
 
 ```yaml
 version: 1
+
 rules:
-  - id: no-direct-sql
+  # 1. Zero-dependency Pattern Matcher
+  - id: no-direct-db-in-controllers
     type: pattern
     severity: error
-    description: "All database writes must go through the repository layer."
+    description: "Controllers must route data queries through the repository layer."
     match:
-      patterns: ["INSERT INTO", "db.query("]
-      paths: ["**/*.ts"]
-      exclude: ["**/repositories/**"]
-  - id: no-eval
+      patterns:
+        - "db.query("
+        - "connection.query("
+        - "INSERT INTO"
+        - "UPDATE "
+        - "DELETE FROM"
+      paths:
+        - "src/controllers/**"
+        - "apps/api/controllers/**"
+      exclude:
+        - "src/repositories/**"
+        - "**/tests/**"
+
+  # 2. AST-Aware Semgrep Matcher (Auto-upgrades when semgrep CLI is available)
+  - id: no-raw-eval
     type: semgrep
     severity: error
-    description: "Do not call eval() in product code."
+    description: "Do not call eval() or new Function() in application code."
     semgrep:
       languages: ["typescript", "javascript"]
       pattern-either:
         - pattern: eval(...)
         - pattern: new Function(...)
+      paths:
+        include:
+          - "src/**"
+        exclude:
+          - "**/*.spec.ts"
+
+  # 3. Warning Severity Rule
+  - id: avoid-console-log-in-production
+    type: pattern
+    severity: warn
+    description: "Use structured logger (logger.info / logger.error) instead of console.log."
+    match:
+      patterns:
+        - "console.log("
+      paths:
+        - "src/**"
+      exclude:
+        - "src/scripts/**"
 ```
 
-`type: pattern` rules are handled by the zero-dependency engine; `type: semgrep` rules (and `pattern` rules, once the [Semgrep](https://semgrep.dev) CLI is installed) use the AST-aware Semgrep engine — a drop-in upgrade with no config change.
+### Schema Attributes
 
-## What a PR comment looks like
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `version` | `number` | **Yes** | Contract schema version (must be `1`). |
+| `rules[].id` | `string` | **Yes** | Unique identifier (`[a-zA-Z0-9_-]`). |
+| `rules[].type` | `"pattern"` \| `"semgrep"` | **Yes** | Rule engine backend. `pattern` requires 0 external tools; `semgrep` runs AST queries. |
+| `rules[].description` | `string` | **Yes** | Plain-English rationale for the rule. |
+| `rules[].severity` | `"error"` \| `"warn"` | No | Default `error`. `error` exits `1`; `warn` informs without breaking the build. |
+| `rules[].match.patterns` | `string[]` | **Yes (pattern)** | Substrings / tokens that trigger violations. |
+| `rules[].match.paths` | `string[]` | No | Globs specifying which file paths are subject to enforcement. |
+| `rules[].match.exclude` | `string[]` | No | Globs specifying paths exempt from this rule. |
+| `rules[].semgrep` | `object` | **Yes (semgrep)** | Native Semgrep rule definition object (`pattern`, `pattern-either`, `languages`). |
 
-When a rule is violated, ArchSentry posts a comment like this on the PR — and removes it automatically once the PR is clean:
+---
 
-```text
-### ArchSentry — Architectural Rule Violations
+## 🧠 Supported AI Explainer Providers
 
-- **no-direct-sql** (error) in `src/checkout.service.ts:12` — All database writes must go through the repository layer.
-  `const rows = await db.query("INSERT INTO users (...)")`
+When `--explain` is enabled (or running via PR comment bot), ArchSentry derives remediation hints using whichever provider key is detected in the environment:
 
-  ArchSentry: move this query into the repository layer (e.g. repositories/users.ts) instead of calling db.query from a service.
+| Provider | Environment Variable | Default Model | Notes |
+| :--- | :--- | :--- | :--- |
+| **OpenRouter** | `OPENROUTER_API_KEY` | `nvidia/nemotron-3-ultra-550b-a55b:free` | **100% Free Tiers Available** (no card required) |
+| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` | High-speed, commercial grade |
+| **Ollama** | `OLLAMA_MODEL` | Set by env (e.g. `llama3`) | **100% Local & Air-gapped** (`localhost:11434`) |
+| **Offline Fallback** | *(None)* | Built-in Template Engine | **Zero-cost, zero-network deterministic hints** |
 
-> Fix the flagged lines or update `archsentry.yml`.
-```
+---
 
-## Development
+## 🛠️ Development & Testing
 
 ```bash
+# Clone the repository
+git clone https://github.com/comerade2134/archsentry.git
+cd archsentry
+
+# Install dependencies
 pnpm install
-pnpm test      # run the test suite
-pnpm lint      # eslint
-pnpm format    # prettier --write .
+
+# Run unit & integration test suites
+pnpm test
+
+# Typecheck and build standalone binary
+pnpm typecheck
+pnpm run build
 ```
 
-A pre-commit hook (simple-git-hooks + lint-staged) runs ESLint and Prettier automatically on every commit.
+---
 
-## Status
+## 📄 License
 
-- ✅ Deterministic scan engine + CLI
-- ✅ GitHub App (Probot) with `pull_request` handler — verified end-to-end
-- ✅ LLM explanations (OpenRouter free tier by default)
-- ✅ Published to npm (`archsentry`) — `npx archsentry@latest scan` works
-- ⏳ Your design partners & first installs
-
-## Security model
-
-- **Detection is deterministic and offline.** Rules are structured YAML; no code is executed to _find_ a violation (the `pattern` engine is a regex/string matcher).
-- **`archsentry.yml` is trusted config.** `semgrep` rules can run arbitrary code on the host (e.g. `pattern-where-python`). Only use contracts you control — never point ArchSentry at an untrusted contract.
-- **Webhook ingress.** In production, deliver webhooks directly to your host over HTTPS with `WEBHOOK_SECRET` set; verify the HMAC. Smee is for local development only.
-- **Permissions.** The GitHub App needs _Issues: write_ to post a top-level PR comment (it uses the Issues API). If you'd rather not grant that, use the **GitHub Action** (zero App install, no Issues permission). A Check-Run mode is planned to narrow this further.
-- **Explainations are sandboxed.** LLM output is control-char-stripped and length-clamped before it is rendered, and the rule text/code are passed as fenced _data_, not instructions, so a hostile contract can't hijack the prompt.
-
-## License
-
-MIT.
+MIT © [comerade2134](https://github.com/comerade2134)

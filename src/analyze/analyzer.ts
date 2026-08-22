@@ -1,12 +1,10 @@
 import type { Contract } from "../config/types";
 import { walkSourceFiles } from "./walk";
+import { filterViolationsByDiff, type DiffFileChanges } from "./diff";
 import { EngineRegistry } from "../engine/registry";
 import type { Violation, SourceFile } from "../engine/types";
 import { consoleLogger, type Logger } from "../util/log";
 
-// Lazily-created singleton registry (audit P3-7): constructing per-scan is
-// cheap now that engine resolution is async, but a single shared instance
-// shaves allocations under high concurrency.
 let _registry: EngineRegistry | null = null;
 function getRegistry(): EngineRegistry {
   if (!_registry) _registry = new EngineRegistry();
@@ -14,33 +12,54 @@ function getRegistry(): EngineRegistry {
 }
 
 /**
- * Filesystem-backed scan (used by the CLI). Walks `root` and runs the
+ * Filesystem-backed scan (used by CLI). Walks `root` and runs the
  * configured engines over every discovered source file.
  */
 export async function analyze(
   root: string,
   contract: Contract,
-  logger: Logger = consoleLogger,
-): Promise<Violation[]> {
-  return runEngine(walkSourceFiles(root), contract, undefined, logger);
-}
-
-// In-memory scan (used by the GitHub App). The engine is path-agnostic:
-// it only ever sees a list of { path, content }, so the source can be a
-// local file tree OR raw strings pulled straight from the GitHub API.
-// `signal` lets the caller abort a long-running scan (e.g. an aborted Semgrep
-// subprocess, audit P2-2).
-export async function analyzeSources(
-  sources: Record<string, string>,
-  contract: Contract,
+  diffFilterOrLogger?: DiffFileChanges | Logger,
   signal?: AbortSignal,
   logger: Logger = consoleLogger,
 ): Promise<Violation[]> {
+  const isLogger = typeof (diffFilterOrLogger as Logger)?.info === "function";
+  const activeLogger = isLogger ? (diffFilterOrLogger as Logger) : logger;
+  const diffFilter = !isLogger ? (diffFilterOrLogger as DiffFileChanges | undefined) : undefined;
+
+  const files = walkSourceFiles(root);
+  const violations = await runEngine(files, contract, signal, activeLogger);
+  if (diffFilter && Object.keys(diffFilter).length > 0) {
+    return filterViolationsByDiff(violations, diffFilter);
+  }
+  return violations;
+}
+
+/**
+ * In-memory scan (used by GitHub App and API).
+ */
+export async function analyzeSources(
+  sources: Record<string, string>,
+  contract: Contract,
+  signalOrFilter?: AbortSignal | DiffFileChanges,
+  logger: Logger = consoleLogger,
+): Promise<Violation[]> {
+  const isSignal =
+    signalOrFilter !== null &&
+    typeof signalOrFilter === "object" &&
+    "aborted" in signalOrFilter;
+
+  const signal = isSignal ? (signalOrFilter as AbortSignal) : undefined;
+  const diffFilter = !isSignal ? (signalOrFilter as DiffFileChanges | undefined) : undefined;
+
   const files: SourceFile[] = Object.entries(sources).map(([path, content]) => ({
-    path,
+    path: path.replace(/\\/g, "/").replace(/^\.\//, ""),
     content,
   }));
-  return runEngine(files, contract, signal, logger);
+  const violations = await runEngine(files, contract, signal, logger);
+  if (diffFilter && Object.keys(diffFilter).length > 0) {
+    return filterViolationsByDiff(violations, diffFilter);
+  }
+  return violations;
 }
 
 async function runEngine(
