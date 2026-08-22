@@ -18,12 +18,16 @@ function getRegistry(): EngineRegistry {
 export async function analyze(
   root: string,
   contract: Contract,
-  diffFilter?: DiffFileChanges,
+  diffFilterOrLogger?: DiffFileChanges | Logger,
   signal?: AbortSignal,
   logger: Logger = consoleLogger,
 ): Promise<Violation[]> {
+  const isLogger = typeof (diffFilterOrLogger as Logger)?.info === "function";
+  const activeLogger = isLogger ? (diffFilterOrLogger as Logger) : logger;
+  const diffFilter = !isLogger ? (diffFilterOrLogger as DiffFileChanges | undefined) : undefined;
+
   const files = walkSourceFiles(root);
-  const violations = await runEngine(files, contract, signal, logger);
+  const violations = await runEngine(files, contract, signal, activeLogger);
   if (diffFilter && Object.keys(diffFilter).length > 0) {
     return filterViolationsByDiff(violations, diffFilter);
   }
@@ -31,17 +35,22 @@ export async function analyze(
 }
 
 /**
- * In-memory scan (used by GitHub App and API). The engine is path-agnostic:
- * it only ever sees a list of { path, content }, so the source can be a
- * local file tree OR raw strings pulled straight from the GitHub API.
+ * In-memory scan (used by GitHub App and API).
  */
 export async function analyzeSources(
   sources: Record<string, string>,
   contract: Contract,
-  diffFilter?: DiffFileChanges,
-  signal?: AbortSignal,
+  signalOrFilter?: AbortSignal | DiffFileChanges,
   logger: Logger = consoleLogger,
 ): Promise<Violation[]> {
+  const isSignal =
+    signalOrFilter !== null &&
+    typeof signalOrFilter === "object" &&
+    "aborted" in signalOrFilter;
+
+  const signal = isSignal ? (signalOrFilter as AbortSignal) : undefined;
+  const diffFilter = !isSignal ? (signalOrFilter as DiffFileChanges | undefined) : undefined;
+
   const files: SourceFile[] = Object.entries(sources).map(([path, content]) => ({
     path: path.replace(/\\/g, "/").replace(/^\.\//, ""),
     content,

@@ -17,7 +17,7 @@ export function formatReport(violations: Violation[], format: Format): string {
     return JSON.stringify({ violations, total: violations.length }, null, 2);
   }
   if (violations.length === 0) {
-    return "✅ ArchSentry: 0 violations found. Architecture contract satisfied.";
+    return "✅ ArchSentry: no rule violations found.";
   }
 
   const errors = violations.filter((v) => v.severity === "error").length;
@@ -48,13 +48,13 @@ export function toPrComment(violations: Violation[]): string {
 
   const body = violations
     .map((v) => {
-      let line = `- **${escapeHtml(v.ruleId)}** (${escapeHtml(v.severity)}) in \`${escapeHtml(v.file)}:${v.line}\` — ${escapeHtml(v.message)}\n  \`${escapeHtml(v.snippet)}\``;
-      if (v.explanation) {
-        line += `\n\n  > **💡 Remediation:** ${escapeHtml(v.explanation)}`;
-      }
-      return line;
+      const head = `- \`${escapeHtml(v.ruleId)}\` (${escapeHtml(v.severity)}) in \`${escapeHtml(v.file)}:${v.line}\`\n`;
+      const msg = v.message ? `  \`\`\`\n${escapeHtml(v.message)}\n  \`\`\`\n` : "";
+      const snip = v.snippet ? `  \`\`\`\n${escapeHtml(v.snippet)}\n  \`\`\`\n` : "";
+      const exp = v.explanation ? `  \`\`\`\n${escapeHtml(v.explanation)}\n  \`\`\`\n` : "";
+      return head + msg + snip + exp;
     })
-    .join("\n\n");
+    .join("\n");
 
-  return `### 🛡️ ArchSentry — Architectural Rule Violations\n\n${body}\n\n---\n*Enforced deterministically by [ArchSentry](https://github.com/comerade2134/archsentry). Fix the flagged lines or update \`archsentry.yml\`.*`;
+  return `### ArchSentry — Architectural Rule Violations\n\n${body}\n\n> Fix the flagged lines or update \`archsentry.yml\`.`;
 }
