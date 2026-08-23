@@ -44,7 +44,7 @@ export async function attachExplanations(
 // Returns a small window of lines around `line` (1-based) from a full file's
 // content. This is what we send to the LLM — never the whole file — so a
 // 10k-line file can't blow the prompt or the token budget (audit H3).
-export function windowedContext(content: string, line: number, before = 6, after = 5): string {
+export function windowedContext(content: string, line: number, before = 10, after = 8): string {
   const lines = content.split(/\r?\n/);
   const start = Math.max(0, line - before - 1);
   const end = Math.min(lines.length, line + after);

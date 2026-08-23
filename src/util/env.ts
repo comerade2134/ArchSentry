@@ -14,3 +14,14 @@ export function envInt(name: string, def: number, log: Logger = consoleLogger): 
   }
   return n;
 }
+
+// Parse a boolean from an env var ("1", "true", "yes", "on" — case-insensitive).
+// Anything else (including unset) resolves to `def`.
+export function envBool(name: string, def: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return def;
+  const v = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return def;
+}

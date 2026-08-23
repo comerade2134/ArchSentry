@@ -14,6 +14,8 @@ export interface Violation {
   line: number;
   snippet: string;
   message: string;
+  // Author-provided fix guidance from the rule's `remediation` field.
+  remediation?: string;
   explanation?: string;
 }
 

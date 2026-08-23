@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import type { Contract } from "../config/types";
 import type { RuleEngine, Violation, SourceFile } from "./types";
 import { PatternEngine } from "./pattern-engine";
+import { ImportEngine } from "./import-engine";
 import { SemgrepEngine, safeJoin, probeSemgrep } from "./semgrep";
 import { consoleLogger, type Logger } from "../util/log";
 
@@ -34,6 +35,7 @@ export class EngineRegistry {
       engines.push(new SemgrepEngine(logger));
     }
     engines.push(new PatternEngine(logger));
+    engines.push(new ImportEngine(logger));
     return engines;
   }
 

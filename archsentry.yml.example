@@ -57,6 +57,16 @@ rules:
       languages: ["typescript"]
       paths:
         include: ["src/services/**/*.ts"]
+
+  # 3b. Dependency Boundary: controllers must not import repositories directly
+  - id: controllers-no-repository-imports
+    type: import
+    severity: error
+    description: "Controllers must go through a service, not import repositories directly."
+    remediation: "Inject or call the matching service, which owns repository access."
+    import:
+      from: ["src/controllers/**"]
+      forbid: ["src/repositories/**"]
       pattern: $DB.query(...)
 
   # 4. AST Semgrep Rule: Dangerous dynamic code execution

@@ -2,6 +2,30 @@
 
 All notable changes to ArchSentry are documented here.
 
+## [0.4.0] - Real architecture rules, fail-closed option, smarter explanations - 2026-08-23
+
+Closes the gap between ArchSentry and true architecture-governance tools, and
+removes the main weaknesses identified in external review.
+
+- **New `import` rule type (dependency-boundary engine, zero-dependency):** enforce
+  which modules a file may import. Understands ESM `import`/`export ... from`,
+  CommonJS `require()`, and dynamic `import()`; resolves relative specifiers to
+  project paths so boundaries are plain path globs (`from` / `forbid` / `allow` /
+  `exclude`, optional `regex` mode). This is the capability line-regex matching
+  fundamentally could not provide.
+- **Multi-line pattern matching:** `match.multiline: true` matches patterns across
+  the whole file (each violation reported at its starting line), so constructs that
+  span lines — `fetch(` with arguments on following lines, chained calls — are caught.
+- **Configurable fail-closed App:** `ARCHSENTRY_FAIL_CLOSED=1` makes the GitHub App
+  post a "rules were NOT verified" comment when `archsentry.yml` cannot be loaded,
+  instead of silently failing open (404 — repo has no config — still exits quietly).
+- **Per-rule `remediation` field:** author-provided fix guidance is carried onto
+  violations, shown verbatim in CLI/PR output, used as ground truth by the AI
+  explainer prompt, and preferred by the offline template explainer.
+- **Wider LLM context window** (10 lines before / 8 after, was 6/5) for
+  substantively better explanations at negligible token cost.
+- Docs, example config, and 28 new tests (143 total) updated to cover all of the above.
+
 ## [0.2.8] - Launch docs & security hardening - 2026-07-17
 
 Pairs the launch-ready docs with the findings from the latest security review. No
