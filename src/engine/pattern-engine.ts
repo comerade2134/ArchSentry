@@ -82,7 +82,11 @@ export class PatternEngine implements RuleEngine {
   }
 
   async scan(files: SourceFile[], rule: Rule): Promise<Violation[]> {
-    const match = (rule.match ?? {}) as { patterns?: string[]; regex?: boolean };
+    const match = (rule.match ?? {}) as {
+      patterns?: string[];
+      regex?: boolean;
+      multiline?: boolean;
+    };
     const patterns = match.patterns ?? [];
     if (!Array.isArray(patterns) || !patterns.length) return [];
 
@@ -96,6 +100,29 @@ export class PatternEngine implements RuleEngine {
       if (!inScope(file, rule)) return [];
       const lines = file.content.split(/\r?\n/);
       const normPath = file.path.replace(/\\/g, "/").replace(/^\.\//, "");
+
+      // Multi-line mode: match against the whole file so constructs that span
+      // lines (decorators + call, chained calls, block comments) are caught.
+      // Each match is reported at the line it starts on.
+      if (match.multiline === true) {
+        const multilineRe = new RegExp(re.source, "gm");
+        const out: Violation[] = [];
+        for (const m of file.content.matchAll(multilineRe)) {
+          const line = file.content.slice(0, m.index ?? 0).split(/\r?\n/).length;
+          out.push({
+            ruleId: rule.id,
+            severity,
+            file: normPath,
+            line,
+            snippet: (m[0] ?? "").trim().split(/\r?\n/)[0] ?? "",
+            message: rule.description,
+            remediation: rule.remediation,
+          });
+        }
+        await Promise.resolve();
+        return out;
+      }
+
       const out: Violation[] = [];
       for (let i = 0; i < lines.length; i++) {
         const lineContent = lines[i] ?? "";
@@ -107,6 +134,7 @@ export class PatternEngine implements RuleEngine {
             line: i + 1,
             snippet: lineContent.trim(),
             message: rule.description,
+            remediation: rule.remediation,
           });
         }
         if ((i & 0x3ff) === 0) await Promise.resolve();

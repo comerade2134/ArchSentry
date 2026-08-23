@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import type { Contract, Rule, Severity, PatternMatch } from "./types";
+import type { Contract, Rule, Severity, PatternMatch, ImportMatch } from "./types";
 import { consoleLogger } from "../util/log";
 import { envInt } from "../util/env";
 
 const VALID_SEVERITIES: readonly Severity[] = ["error", "warn"];
-const VALID_TYPES = ["pattern", "semgrep"] as const;
+const VALID_TYPES = ["pattern", "semgrep", "import"] as const;
 const SUPPORTED_VERSIONS = new Set([1]);
 const DEFAULT_MAX_RULES = 1000;
 
@@ -160,13 +160,50 @@ function validateRule(raw: unknown, index: number): Rule {
     if (match.regex !== undefined && typeof match.regex !== "boolean") {
       throw new ConfigError(`${where}: "match.regex" must be a boolean.`);
     }
+    if (match.multiline !== undefined && typeof match.multiline !== "boolean") {
+      throw new ConfigError(`${where}: "match.multiline" must be a boolean.`);
+    }
+  }
+
+  if (r.type === "import") {
+    const im = (r.import ?? {}) as Record<string, unknown>;
+    if (!isStringArray(im.forbid) || im.forbid.length === 0) {
+      throw new ConfigError(
+        `${where} (type "import") requires "import.forbid" as a non-empty array of glob strings.`,
+      );
+    }
+    if (im.from !== undefined && !isStringArray(im.from)) {
+      throw new ConfigError(`${where}: "import.from" must be an array of glob strings.`);
+    }
+    if (im.allow !== undefined && !isStringArray(im.allow)) {
+      throw new ConfigError(`${where}: "import.allow" must be an array of glob strings.`);
+    }
+    if (im.exclude !== undefined && !isStringArray(im.exclude)) {
+      throw new ConfigError(`${where}: "import.exclude" must be an array of glob strings.`);
+    }
+    if (im.regex !== undefined && typeof im.regex !== "boolean") {
+      throw new ConfigError(`${where}: "import.regex" must be a boolean.`);
+    }
+  }
+
+  if (r.remediation !== undefined && typeof r.remediation !== "string") {
+    throw new ConfigError(`${where}: "remediation" must be a string.`);
   }
 
   if (r.type === "semgrep") {
     validateSemgrepRule(r.semgrep, where);
   }
 
-  const KNOWN = new Set(["id", "type", "severity", "description", "match", "semgrep"]);
+  const KNOWN = new Set([
+    "id",
+    "type",
+    "severity",
+    "description",
+    "match",
+    "semgrep",
+    "import",
+    "remediation",
+  ]);
   const extra = Object.keys(r).filter((k) => !KNOWN.has(k));
   if (extra.length) {
     consoleLogger.warn(`${where} has unknown key(s): ${extra.join(", ")} (ignored)`);
@@ -176,12 +213,14 @@ function validateRule(raw: unknown, index: number): Rule {
 
   const rule: Rule = {
     id: r.id as string,
-    type: r.type as "pattern" | "semgrep",
+    type: r.type as "pattern" | "semgrep" | "import",
     severity: r.severity as Severity,
     description: r.description as string,
   };
   if (r.match !== undefined) rule.match = r.match as PatternMatch;
   if (r.semgrep !== undefined) rule.semgrep = r.semgrep as Record<string, unknown>;
+  if (r.import !== undefined) rule.import = r.import as ImportMatch;
+  if (r.remediation !== undefined) rule.remediation = r.remediation as string;
   return rule;
 }
 

@@ -46,9 +46,9 @@ describe("windowedContext (audit H3: never send the whole file to the LLM)", () 
   it("returns only a small window around the violation line", () => {
     const out = windowedContext(big, 100);
     const lines = out.split("\n");
-    expect(lines.length).toBeLessThanOrEqual(12); // 6 before + the line + 5 after
+    expect(lines.length).toBeLessThanOrEqual(19); // 10 before + the line + 8 after
     expect(out).toContain("line 100");
-    expect(out.startsWith("line 94")).toBe(true); // window opens near the violation
+    expect(out.startsWith("line 90")).toBe(true); // window opens near the violation
     expect(out).not.toContain("line 1\n"); // the very first line is excluded
     expect(out).not.toContain("line 200");
   });

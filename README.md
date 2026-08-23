@@ -33,11 +33,12 @@ $ echo $?
 
 ## 💡 Why ArchSentry?
 
-AI coding assistants (Cursor, Copilot, Claude Code) generate thousands of lines of code per day. While standard linters catch syntax errors and SAST tools detect known CVE vulnerabilities, **neither understands your system's architecture**. 
+AI coding assistants (Cursor, Copilot, Claude Code) generate thousands of lines of code per day. While standard linters catch syntax errors and SAST tools detect known CVE vulnerabilities, **neither understands your system's architecture**.
 
 LLM review bots burn hundreds of dollars per repo summarizing diffs without guaranteeing architectural compliance.
 
 **ArchSentry solves this with a two-phase architecture:**
+
 1. **Deterministic Phase (Zero Cost & Blazing Fast):** Code is matched against your YAML contracts via sub-millisecond regex or AST/Semgrep patterns. No tokens are spent finding violations.
 2. **Explanation Phase (Optional & Free-Tier Compatible):** When a violation is flagged, an LLM generates a concise, contextual remediation hint directly on the offending code snippet.
 
@@ -45,14 +46,14 @@ LLM review bots burn hundreds of dollars per repo summarizing diffs without guar
 
 ## 📊 Comparison Matrix
 
-| Feature | Legacy SAST (SonarQube, Snyk) | Linters (ESLint, Biome) | AI Review Bots (Codium, Copilot PR) | 🛡️ **ArchSentry** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Primary Focus** | Known CVEs & security vulnerabilities | Code style, syntax, and formatting | Generic natural language commentary | **Custom architectural boundaries & contracts** |
-| **Scan Cost** | Heavy license fees | Free | $0.05–$0.50+ per PR diff in LLM tokens | **$0 (Deterministic AST & Pattern Engine)** |
-| **Scan Latency** | 20s – 5 mins | < 1s | 15s – 60s (LLM API queue) | **< 100ms** |
-| **Deterministic Guarantee** | ✅ Yes | ✅ Yes | ❌ No (LLM hallucinations & flakiness) | **✅ 100% Deterministic** |
-| **Architectural Scope** | ❌ None (generic rules) | ⚠️ Limited (complex plugin ASTs) | ⚠️ Probabilistic (misses subtle invariants) | **✅ Declarative YAML Contracts** |
-| **Actionable AI Fix Hints** | ❌ Generic docs link | ❌ Static message | ⚠️ Verbose noise | **✅ Targeted, contextual fix explanations** |
+| Feature                     | Legacy SAST (SonarQube, Snyk)         | Linters (ESLint, Biome)            | AI Review Bots (Codium, Copilot PR)         | 🛡️ **ArchSentry**                               |
+| :-------------------------- | :------------------------------------ | :--------------------------------- | :------------------------------------------ | :---------------------------------------------- |
+| **Primary Focus**           | Known CVEs & security vulnerabilities | Code style, syntax, and formatting | Generic natural language commentary         | **Custom architectural boundaries & contracts** |
+| **Scan Cost**               | Heavy license fees                    | Free                               | $0.05–$0.50+ per PR diff in LLM tokens      | **$0 (Deterministic AST & Pattern Engine)**     |
+| **Scan Latency**            | 20s – 5 mins                          | < 1s                               | 15s – 60s (LLM API queue)                   | **< 100ms**                                     |
+| **Deterministic Guarantee** | ✅ Yes                                | ✅ Yes                             | ❌ No (LLM hallucinations & flakiness)      | **✅ 100% Deterministic**                       |
+| **Architectural Scope**     | ❌ None (generic rules)               | ⚠️ Limited (complex plugin ASTs)   | ⚠️ Probabilistic (misses subtle invariants) | **✅ Declarative YAML Contracts**               |
+| **Actionable AI Fix Hints** | ❌ Generic docs link                  | ❌ Static message                  | ⚠️ Verbose noise                            | **✅ Targeted, contextual fix explanations**    |
 
 ---
 
@@ -74,9 +75,10 @@ git diff main...HEAD | npx archsentry scan --config archsentry.yml --diff -
 ```
 
 #### Exit Codes (CI Standardized)
-* `0`: Clean scan. All architectural invariants satisfied.
-* `1`: Architectural violations detected (severity: `error`).
-* `2`: Runtime error (missing configuration file, malformed YAML, or invalid path).
+
+- `0`: Clean scan. All architectural invariants satisfied.
+- `1`: Architectural violations detected (severity: `error`).
+- `2`: Runtime error (missing configuration file, malformed YAML, or invalid path).
 
 ---
 
@@ -130,6 +132,11 @@ cp .env.example .env
 # Start Probot webhook listener
 pnpm start
 ```
+
+**Fail-closed mode:** by default the App logs (but does not surface) a failure to load
+`archsentry.yml` from a repo that has one. Set `ARCHSENTRY_FAIL_CLOSED=1` to instead post a
+warning comment stating the rules were **not** verified — the right choice for teams that
+treat unverified rules as a blocker.
 
 ---
 
@@ -188,21 +195,56 @@ rules:
         - "src/**"
       exclude:
         - "src/scripts/**"
+
+  # 4. Dependency Boundary Rule (zero-dependency, understands imports)
+  #    Files matching `from` may not import targets matching `forbid`.
+  #    Relative imports are resolved to project paths first, so this catches
+  #    "../repositories/user" from a controller even without file extensions.
+  - id: controllers-import-only-domain
+    type: import
+    severity: error
+    description: "Controllers may import only from their own domain and shared code."
+    remediation: "Move shared logic into src/shared or the controller's own domain module."
+    import:
+      from: ["src/controllers/**"]
+      forbid:
+        - "src/repositories/**"
+        - "src/other-domain/**"
+      allow:
+        - "src/shared/**"
+
+  # 5. Multi-line Pattern Rule (matches across the whole file)
+  - id: no-multiline-fetch
+    type: pattern
+    severity: error
+    description: "No direct fetch calls, even when the call spans multiple lines."
+    match:
+      patterns:
+        - "fetch("
+      multiline: true
+      paths:
+        - "src/**"
 ```
 
 ### Schema Attributes
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `version` | `number` | **Yes** | Contract schema version (must be `1`). |
-| `rules[].id` | `string` | **Yes** | Unique identifier (`[a-zA-Z0-9_-]`). |
-| `rules[].type` | `"pattern"` \| `"semgrep"` | **Yes** | Rule engine backend. `pattern` requires 0 external tools; `semgrep` runs AST queries. |
-| `rules[].description` | `string` | **Yes** | Plain-English rationale for the rule. |
-| `rules[].severity` | `"error"` \| `"warn"` | No | Default `error`. `error` exits `1`; `warn` informs without breaking the build. |
-| `rules[].match.patterns` | `string[]` | **Yes (pattern)** | Substrings / tokens that trigger violations. |
-| `rules[].match.paths` | `string[]` | No | Globs specifying which file paths are subject to enforcement. |
-| `rules[].match.exclude` | `string[]` | No | Globs specifying paths exempt from this rule. |
-| `rules[].semgrep` | `object` | **Yes (semgrep)** | Native Semgrep rule definition object (`pattern`, `pattern-either`, `languages`). |
+| Field                     | Type                                     | Required          | Description                                                                                                                          |
+| :------------------------ | :--------------------------------------- | :---------------- | :----------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                 | `number`                                 | **Yes**           | Contract schema version (must be `1`).                                                                                               |
+| `rules[].id`              | `string`                                 | **Yes**           | Unique identifier (`[a-zA-Z0-9_-]`).                                                                                                 |
+| `rules[].type`            | `"pattern"` \| `"semgrep"` \| `"import"` | **Yes**           | Rule engine backend. `pattern` requires 0 external tools; `semgrep` runs AST queries; `import` enforces dependency boundaries.       |
+| `rules[].description`     | `string`                                 | **Yes**           | Plain-English rationale for the rule.                                                                                                |
+| `rules[].severity`        | `"error"` \| `"warn"`                    | No                | Default `error`. `error` exits `1`; `warn` informs without breaking the build.                                                       |
+| `rules[].remediation`     | `string`                                 | No                | Author-provided fix guidance. Shown in reports and used as ground truth by the AI explainer.                                         |
+| `rules[].match.patterns`  | `string[]`                               | **Yes (pattern)** | Substrings / tokens that trigger violations.                                                                                         |
+| `rules[].match.multiline` | `boolean`                                | No                | Default `false` (line-by-line). When `true`, patterns match across the whole file so multi-line constructs are caught.               |
+| `rules[].match.paths`     | `string[]`                               | No                | Globs specifying which file paths are subject to enforcement.                                                                        |
+| `rules[].match.exclude`   | `string[]`                               | No                | Globs specifying paths exempt from this rule.                                                                                        |
+| `rules[].import.forbid`   | `string[]`                               | **Yes (import)**  | Import targets that are not allowed. Relative specifiers are resolved to project paths before matching; bare specifiers match as-is. |
+| `rules[].import.from`     | `string[]`                               | No                | Globs for files this boundary applies to (default: all files).                                                                       |
+| `rules[].import.allow`    | `string[]`                               | No                | Exceptions to `forbid` (checked first).                                                                                              |
+| `rules[].import.regex`    | `boolean`                                | No                | Treat `forbid`/`allow` as real RegExp instead of globs.                                                                              |
+| `rules[].semgrep`         | `object`                                 | **Yes (semgrep)** | Native Semgrep rule definition object (`pattern`, `pattern-either`, `languages`).                                                    |
 
 ---
 
@@ -210,12 +252,12 @@ rules:
 
 When `--explain` is enabled (or running via PR comment bot), ArchSentry derives remediation hints using whichever provider key is detected in the environment:
 
-| Provider | Environment Variable | Default Model | Notes |
-| :--- | :--- | :--- | :--- |
-| **OpenRouter** | `OPENROUTER_API_KEY` | `nvidia/nemotron-3-ultra-550b-a55b:free` | **100% Free Tiers Available** (no card required) |
-| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` | High-speed, commercial grade |
-| **Ollama** | `OLLAMA_MODEL` | Set by env (e.g. `llama3`) | **100% Local & Air-gapped** (`localhost:11434`) |
-| **Offline Fallback** | *(None)* | Built-in Template Engine | **Zero-cost, zero-network deterministic hints** |
+| Provider             | Environment Variable | Default Model                            | Notes                                            |
+| :------------------- | :------------------- | :--------------------------------------- | :----------------------------------------------- |
+| **OpenRouter**       | `OPENROUTER_API_KEY` | `nvidia/nemotron-3-ultra-550b-a55b:free` | **100% Free Tiers Available** (no card required) |
+| **OpenAI**           | `OPENAI_API_KEY`     | `gpt-4o-mini`                            | High-speed, commercial grade                     |
+| **Ollama**           | `OLLAMA_MODEL`       | Set by env (e.g. `llama3`)               | **100% Local & Air-gapped** (`localhost:11434`)  |
+| **Offline Fallback** | _(None)_             | Built-in Template Engine                 | **Zero-cost, zero-network deterministic hints**  |
 
 ---
 

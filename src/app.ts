@@ -5,7 +5,7 @@ import { toPrComment } from "./report/formatter";
 import { attachExplanations, windowedContext } from "./service/scan";
 import type { Violation } from "./engine/types";
 import { mapWithConcurrency, withTimeout } from "./util/async";
-import { envInt } from "./util/env";
+import { envInt, envBool } from "./util/env";
 import { consoleLogger, type Logger } from "./util/log";
 
 // The handler only ever fires for pull_request webhook events, so narrow the
@@ -77,12 +77,21 @@ export async function handlePr(context: PrContext): Promise<void> {
     });
   } catch (e) {
     // No contract file → nothing to enforce. A 404 means the repo simply has no
-    // archsentry.yml; any other error is logged (but we still fail open rather
-    // than blocking the PR over a config fetch glitch).
+    // archsentry.yml. Other failures default to fail-open (logged only), but
+    // deployments that treat unverified rules as a blocker can set
+    // ARCHSENTRY_FAIL_CLOSED=1 to surface it on the PR instead.
+    const is404 = !(e instanceof ConfigError) && (e as { status?: number })?.status === 404;
     if (e instanceof ConfigError) {
       log.warn(`invalid contract in ${owner}/${repo}: ${e.message}`);
-    } else if ((e as { status?: number })?.status !== 404) {
+    } else if (!is404) {
       log.warn(`could not load contract in ${owner}/${repo}: ${(e as Error).message}`);
+    }
+    if (!is404 && envBool("ARCHSENTRY_FAIL_CLOSED", false)) {
+      await upsert(
+        `${MARKER}\n⚠️ ArchSentry could not load \`archsentry.yml\` and is running ` +
+          `fail-closed: the architectural rules were NOT verified. ` +
+          `Details: \`${(e as Error).message}\``,
+      );
     }
     return;
   }
